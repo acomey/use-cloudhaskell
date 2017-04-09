@@ -28,11 +28,10 @@ import           Network.Transport.TCP                              (createTrans
 import           PrimeFactors
 import           System.Environment                                 (getArgs)
 import           System.Exit
-
+import           Argon
+import           System.Process
 -- this is the work we get workers to do. It could be anything we want. To keep things simple, we'll calculate the
 -- number of prime factors for the integer passed.
-doWork :: Integer -> Integer
-doWork = numPrimeFactors
 
 -- | worker function.
 -- This is the function that is called to launch a worker. It loops forever, asking for work, reading its message queue
@@ -53,9 +52,11 @@ worker (manager, workQueue) = do
       -- Wait for work to arrive. We will either be sent a message with an integer value to use as input for processing,
       -- or else we will be sent (). If there is work, do it, otherwise terminate
       receiveWait
-        [ match $ \n  -> do
-            liftIO $ putStrLn $ "[Node " ++ (show us) ++ "] given work: " ++ show n
-            send manager (doWork n)
+        [ match $ \path  -> do
+            liftIO $ putStrLn $ "[Node " ++ (show us) ++ "] given work: "
+            (file,analysis) <- analyze getConfig path
+            let result = getComplexity' analysis
+            send manager result
             liftIO $ putStrLn $ "[Node " ++ (show us) ++ "] finished work."
             go us -- note the recursion this function is called again!
         , match $ \ () -> do
@@ -65,19 +66,29 @@ worker (manager, workQueue) = do
 
 remotable ['worker] -- this makes the worker function executable on a remote node
 
-manager :: Integer    -- The number range we wish to generate work for (there will be n work packages)
+manager :: String    -- The number range we wish to generate work for (there will be n work packages)
         -> [NodeId]   -- The set of cloud haskell nodes we will initalise as workers
         -> Process Integer
-manager n workers = do
+
+manager url workers = do
   us <- getSelfPid
 
   -- first, we create a thread that generates the work tasks in response to workers
   -- requesting work.
   workQueue <- spawnLocal $ do
     -- Return the next bit of work to be done
-    forM_ [1 .. n] $ \m -> do
+    callCommand $ "git clone " ++ url
+    let gitName = last $ splitOn "/" url
+    let name = head $ splitOn "." gitName
+
+    files <-traverseDir ("./" ++ name)
+
+
+
+    let numFiles = length (filterHaskellFile files)
+    forM_ (filterHaskellFile files) $ \path -> do
       them <- expect   -- await a message from a free worker asking for work
-      send them m     -- send them work
+      send them path     -- send them work
 
     -- Once all the work is done tell the workers to terminate. We do this by sending every worker who sends a message
     -- to us a null content: () . We do this only after we have distributed all the work in the forM_ loop above. Note
@@ -92,23 +103,17 @@ manager n workers = do
   liftIO $ putStrLn $ "[Manager] Workers spawned"
   -- wait for all the results from the workers and return the sum total. Look at the implementation, whcih is not simply
   -- summing integer values, but instead is expecting results from workers.
-  sumIntegers (fromIntegral n)
-
+  complexityResult <- do
+      complexityList <- forM [1..numFiles] $ \m -> do
+          newComplexity <- expect
+          return newComplexity
+      let result = ( sum complexityList )/numFiles
+      return result
 -- note how this function works: initialised with n, the number range we started the program with, it calls itself
 -- recursively, decrementing the integer passed until it finally returns the accumulated value in go:acc. Thus, it will
 -- be called n times, consuming n messages from the message queue, corresponding to the n messages sent by workers to
 -- the manager message queue.
-sumIntegers :: Int -> Process Integer
-sumIntegers = go 0
-  where
-    go :: Integer -> Int -> Process Integer
-    go !acc 0 = return acc
-    go !acc n = do
-      m <- expect
-      go (acc + m) (n - 1)
 
-rtable :: RemoteTable
-rtable = Lib.__remoteTable initRemoteTable
 
 -- | This is the entrypoint for the program. We deal with program arguments and launch up the cloud haskell code from
 -- here.
@@ -119,17 +124,80 @@ someFunc = do
   args <- getArgs
 
   case args of
-    ["manager", host, port, n] -> do
+    ["manager", host, port, url] -> do
       putStrLn "Starting Node as Manager"
       backend <- initializeBackend host port rtable
       startMaster backend $ \workers -> do
-        result <- manager (read n) workers
+        result <- manager (read url) workers
         liftIO $ print result
     ["worker", host, port] -> do
       putStrLn "Starting Node as Worker"
       backend <- initializeBackend host port rtable
       startSlave backend
-    _ -> putStrLn "Bad parameters"
+    
+
+
+
+getComplexity :: ComplexityBlock -> Int
+getComplexity ( CC tuple ) = getComplexity' tuple
+
+getComplexity' :: (Loc, String, Int) -> Int
+getComplexity' ( _,_,complexity ) = complexity
+
+
+
+
+traverseDir :: FilePath -> IO [FilePath]
+traverseDir top = do
+    ds <- listDirectory top
+    paths <- forM ds $ \d -> do
+      let path = top </> d
+      isFile<-liftIO $ doesFileExist path
+      if not isFile
+        then traverseDir path
+        else return [path]
+    return (concat paths)
+
+filterHaskellFile :: [FilePath] ->[FilePath]
+filterHaskellFile fileList = filter (".hs" `isSuffixOf`) fileList
+
+
+filterFiles :: FilePath ->IO [FilePath]
+filterFiles path = do
+    root <- listDirectory path
+    --putStrLn $ show root
+    --
+    printList path root
+    return root
+
+    where
+
+      printList :: FilePath->[FilePath] -> IO ()
+      printList base root = do
+        forM_ root $ \name -> do
+          let b = (base </> name)
+          isFile<- liftIO $ doesFileExist $ base </> name
+          if not isFile then do
+              result <- listDirectory $ base </> name
+
+              printList (base </> name) result
+              --putStrLn $ show a
+          else do
+              putStrLn $ show "hello"
+              --putStrLn $ base </> name
+
+
+getConfig ::Config
+getConfig = Config {
+    minCC       = read "2"
+  , exts        = []
+  , headers     = []
+  , includeDirs = []
+  , outputMode  = JSON
+  }
+
+
+
 
 
   -- create a cloudhaskell node, which must be initialised with a network transport

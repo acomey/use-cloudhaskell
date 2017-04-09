@@ -8,19 +8,19 @@
 # A snapshot resolver dictates the compiler version and the set of packages
 # to be used for project dependencies. For example:
 #
-# resolver: lts-3.5
+#resolver: lts-3.5
 # resolver: nightly-2015-09-21
-# resolver: ghc-7.10.2
+#resolver: ghc-7.10.2
 # resolver: ghcjs-0.1.0_ghc-7.10.2
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-7.11
+resolver: lts-6.3
 
 docker:
-  enable: true # warning!
+  enable: false # warning!
 
-# stack image container 
+# stack image container
 image:
   container:
     name: use-cloudhaskell
@@ -48,7 +48,7 @@ packages:
 - '.'
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
-extra-deps: [ distributed-process-0.6.6, distributed-process-simplelocalnet-0.2.3.3, network-multicast-0.1.2]
+extra-deps: [ distributed-process-0.6.6, distributed-process-simplelocalnet-0.2.3.3, network-multicast-0.1.2,  argon-0.4.1.0,directory-1.2.5.1, pipes-files-0.1.2, hierarchy-0.3.1.2, posix-paths-0.2.1.1]
 
 # Override default flag values for local packages and extra-deps
 flags: {}
