@@ -23,6 +23,9 @@ library
                      , network-transport-tcp
                      , distributed-process
                      , distributed-process-simplelocalnet
+                     , directory
+                     , filepath   
+                     , split                                       
   default-language:    Haskell2010
 
 executable use-cloudhaskell-exe

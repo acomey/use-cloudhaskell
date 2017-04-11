@@ -30,8 +30,48 @@ import           System.Environment                                 (getArgs)
 import           System.Exit
 import           Argon
 import           System.Process
+
+import           System.Directory (getDirectoryContents)
+import           System.Directory (doesFileExist)
+import           System.Directory (listDirectory)
+import           System.FilePath.Posix
+import           Data.List (isSuffixOf)
+import           Data.List.Split
+
 -- this is the work we get workers to do. It could be anything we want. To keep things simple, we'll calculate the
 -- number of prime factors for the integer passed.
+
+getComplexity :: ComplexityBlock -> Int
+getComplexity ( CC tuple ) = getComplexity' tuple
+
+getComplexity' :: (Loc, String, Int) -> Int
+getComplexity' ( _,_,complexity ) = complexity
+
+
+traverseDir :: FilePath -> IO [FilePath]
+traverseDir top = do
+    ds <- listDirectory top
+    paths <- forM ds $ \d -> do
+      let path = top </> d
+      isFile<-liftIO $ doesFileExist path
+      if not isFile
+        then traverseDir path
+        else return [path]
+    return (concat paths)
+
+filterHaskellFile :: [FilePath] ->[FilePath]
+filterHaskellFile fileList = filter (".hs" `isSuffixOf`) fileList
+       
+
+getConfig ::Config
+getConfig = Config {
+    minCC       = read "2"
+  , exts        = []
+  , headers     = []
+  , includeDirs = []
+  , outputMode  = JSON
+  }
+
 
 -- | worker function.
 -- This is the function that is called to launch a worker. It loops forever, asking for work, reading its message queue
@@ -138,63 +178,7 @@ someFunc = do
 
 
 
-getComplexity :: ComplexityBlock -> Int
-getComplexity ( CC tuple ) = getComplexity' tuple
 
-getComplexity' :: (Loc, String, Int) -> Int
-getComplexity' ( _,_,complexity ) = complexity
-
-
-
-
-traverseDir :: FilePath -> IO [FilePath]
-traverseDir top = do
-    ds <- listDirectory top
-    paths <- forM ds $ \d -> do
-      let path = top </> d
-      isFile<-liftIO $ doesFileExist path
-      if not isFile
-        then traverseDir path
-        else return [path]
-    return (concat paths)
-
-filterHaskellFile :: [FilePath] ->[FilePath]
-filterHaskellFile fileList = filter (".hs" `isSuffixOf`) fileList
-
-
-filterFiles :: FilePath ->IO [FilePath]
-filterFiles path = do
-    root <- listDirectory path
-    --putStrLn $ show root
-    --
-    printList path root
-    return root
-
-    where
-
-      printList :: FilePath->[FilePath] -> IO ()
-      printList base root = do
-        forM_ root $ \name -> do
-          let b = (base </> name)
-          isFile<- liftIO $ doesFileExist $ base </> name
-          if not isFile then do
-              result <- listDirectory $ base </> name
-
-              printList (base </> name) result
-              --putStrLn $ show a
-          else do
-              putStrLn $ show "hello"
-              --putStrLn $ base </> name
-
-
-getConfig ::Config
-getConfig = Config {
-    minCC       = read "2"
-  , exts        = []
-  , headers     = []
-  , includeDirs = []
-  , outputMode  = JSON
-  }
 
 
 
